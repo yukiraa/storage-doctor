@@ -79,7 +79,11 @@ namespace StorageDoctor
             files.DoubleClick += delegate { RevealFile(); };
             settings.Click += delegate { Open(new ProcessStartInfo("ms-settings:storagesense") { UseShellExecute = true }); };
             FormClosing += delegate { if (active != null) active.Cancel(); };
-            Shown += delegate { UpdateSpace(); };
+            Shown += async delegate {
+                UpdateSpace();
+                try { await Scanner.Prepare(); }
+                catch (Exception ex) { if (!IsDisposed && active == null) status.Text = "Could not load the scan engine. " + ex.Message; }
+            };
         }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]

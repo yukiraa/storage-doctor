@@ -60,6 +60,30 @@ namespace StorageDoctor
                 catch (OperationCanceledException) {}
                 try { Scanner.Scan(Path.Combine(root, "missing"), CancellationToken.None, null); throw new Exception("Missing directory accepted."); }
                 catch (DirectoryNotFoundException) {}
+                var names = Directory.CreateDirectory(Path.Combine(root, "unicode names"));
+                string[] expected = new[] { "space plus +.bin", "\uE000.bin", "\uD83D\uDCC1.bin" };
+                foreach (var name in expected) File.WriteAllBytes(Path.Combine(names.FullName, name), new byte[4]);
+                var sorted = Scanner.Scan(names.FullName, CancellationToken.None, null).Largest.Select(f => Path.GetFileName(f.Path));
+                Require(sorted.SequenceEqual(expected.OrderBy(name => name, StringComparer.Ordinal)), "UTF-16 paths and tie order.");
+                foreach (var name in expected) File.Delete(Path.Combine(names.FullName, name));
+                string junction = Path.Combine(root, "junction");
+                var mklink = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                    "/d /c mklink /J junction \"nested files\"") {
+                    WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true
+                };
+                using (var process = Process.Start(mklink))
+                {
+                    process.WaitForExit();
+                    Require(process.ExitCode == 0, "Could not create the test junction.");
+                }
+                try
+                {
+                    var links = Scanner.Scan(root, CancellationToken.None, null);
+                    Require(links.Skipped == 1 && links.Files == report.Files && links.Bytes == report.Bytes, "Junction traversal.");
+                    try { Scanner.Scan(junction, CancellationToken.None, null); throw new Exception("Junction root accepted."); }
+                    catch (IOException) {}
+                }
+                finally { Directory.Delete(junction); }
                 Console.WriteLine("Scanner checks passed.");
                 if (!args.Contains("--ui")) return;
 
